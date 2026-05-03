@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <NIDAQmx.h>
 
+
 #define PACKET_SAMPLES 128
 #define SAMPLE_RATE 44100
 #define ADC_BITS 12

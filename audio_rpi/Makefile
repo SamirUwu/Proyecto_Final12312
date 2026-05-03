@@ -27,7 +27,7 @@ FEEDER_OUT = ni_feeder.exe
 all: $(AUDIO_OUT) $(FEEDER_OUT)
 
 $(AUDIO_OUT): $(C_OBJ) $(CPP_OBJ)
-	$(CXX) -o $@ $^ -lm -lportaudio -lws2_32
+	$(CXX) -o $@ $^ -lm -lportaudio -lws2_32 -L$(NIDAQMX_LIB) -lNIDAQmx
 
 $(FEEDER_OUT): src/ni_feeder.c
 	$(CC) $(CFLAGS) -o $@ $< -L$(NIDAQMX_LIB) -lNIDAQmx -lws2_32
@@ -39,6 +39,7 @@ $(FEEDER_OUT): src/ni_feeder.c
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
+	rm -f $(AUDIO_OUT) $(FEEDER_OUT) src/*.o
 	del /Q $(AUDIO_OUT) $(FEEDER_OUT) src\*.o 2>NUL || true
 
 .PHONY: all clean

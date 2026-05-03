@@ -54,6 +54,7 @@ class MainWindow(QWidget):
         #Effects Dropdown
         self.available_effects = [
             "Overdrive",
+            "Distortion",
             "Delay",
             "Wah",
             "Flanger",
@@ -173,9 +174,32 @@ class MainWindow(QWidget):
         """)
         self.bypass_label.setCursor(Qt.CursorShape.PointingHandCursor)
         self.bypass_label.adjustSize()
+        self.bypass_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.bypass_label.move(self.plot_post.width() - self.bypass_label.width() - 10, 10)
         self.bypass_label.show()
         self.bypass_label.mousePressEvent = self._toggle_bypass_click
+
+        # Pause/Play button
+        self.paused = False
+        self.pause_label = QLabel("WATCHING", self.plot_pre)
+        self.pause_label.setStyleSheet("""
+            QLabel {
+                color: #aaaaaa;
+                background-color: rgba(0,0,0,180);
+                border: 1px solid #555;
+                border-radius: 4px;
+                padding: 3px 8px;
+                font-size: 11px;
+                font-weight: bold;
+            }
+        """)
+        self.pause_label.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.pause_label.adjustSize()
+        self.pause_label.setFixedWidth(90)
+        self.pause_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.pause_label.move(0, 10)  
+        self.pause_label.show()
+        self.pause_label.mousePressEvent = self._toggle_pause_click
                 
         self.timer = QTimer()
         self.timer.timeout.connect(self.sim_signal)
@@ -365,7 +389,8 @@ class MainWindow(QWidget):
             "Chorus": {"RATE": 0.5, "DEPTH": 0.3, "FEEDBACK": 0.0, "MIX": 0.2},
             "Phaser": {"RATE":0.5,"DEPTH":0.7,"FEEDBACK":0.3,"MIX":0.5},
             "PitchShifter": {"SEMITONES":0.0, "SEMITONES_B": 0.0, "MIX_A": 1.0, "MIX_B": 0.0, "MIX": 0.5},
-            "Reverb": {"FEEDBACK": 0.6, "LPFREQ": 8000.0, "MIX": 0.3}
+            "Reverb": {"FEEDBACK": 0.6, "LPFREQ": 8000.0, "MIX": 0.3},
+            "Distortion": {"OUTPUT":0.5},
         }
 
         return defaults[effect_type]
@@ -551,6 +576,44 @@ class MainWindow(QWidget):
             effect["enabled"] = not self.bypass_active
         self.receiver.send_json(self.model.to_json())
 
+    def _toggle_pause_click(self, event):
+            self.paused = not self.paused
+            FIXED_WIDTH = 90  
+            if self.paused:
+                self.timer.stop()
+                self.pause_label.setText("STOPPED")
+                self.pause_label.setStyleSheet("""
+                    QLabel {
+                        color: #ffaa00;
+                        background-color: rgba(60,40,0,200);
+                        border: 1px solid #ffaa00;
+                        border-radius: 4px;
+                        padding: 3px 8px;
+                        font-size: 11px;
+                        font-weight: bold;
+                    }
+                """)
+            else:
+                self.timer.start(100)
+                self.pause_label.setText("WATCHING")
+                self.pause_label.setStyleSheet("""
+                    QLabel {
+                        color: #aaaaaa;
+                        background-color: rgba(0,0,0,180);
+                        border: 1px solid #555;
+                        border-radius: 4px;
+                        padding: 3px 8px;
+                        font-size: 11px;
+                        font-weight: bold;
+                    }
+                """)
+            self.pause_label.setFixedWidth(FIXED_WIDTH)
+
     def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self.bypass_label.move(self.plot_post.width() - self.bypass_label.width() - 10, 10)
+            super().resizeEvent(event)
+            self.bypass_label.move(
+                self.plot_post.viewport().width() - self.bypass_label.width() - 10, 10
+            )
+            self.pause_label.move(
+                self.plot_pre.viewport().width() - 90 - 10, 10
+            )

@@ -17,13 +17,14 @@
 #include "../include/pitch_shifter.h"
 #include "../include/phaser.h"
 #include "../include/reverb.h"
+#include "../include/distortion.h"
 #include "../include/config.h"
 
 #define PI                 3.14159265358979323846f
 #define ALSA_WRITE_BATCHES 1
 #define ALSA_PERIOD_FRAMES (SERIAL_PACKET_SAMPLES * ALSA_WRITE_BATCHES)
 
-#define SIM_MODE    3
+#define SIM_MODE    1
 #define SERIAL_PORT NULL
 #define SERIAL_BAUD 460800
 
@@ -73,7 +74,8 @@ static void alsa_write_safe(PaStream *stream, const int16_t *buf, int frames)
 #define FX_PITCHSHIFTER 5
 #define FX_PHASER       6
 #define FX_REVERB       7
-#define FX_COUNT        8
+#define FX_DISTORTION   8
+#define FX_COUNT        9  
 
 int enabled[FX_COUNT]  = {0};
 int fx_order[FX_COUNT] = {0};
@@ -99,6 +101,7 @@ float process_effect(int fx_id, float sig,
 {
     switch (fx_id) {
         case FX_OVERDRIVE:    return Overdrive_process(od, sig);
+        case FX_DISTORTION: return sig;
         case FX_WAH:          return Wah_process(wah, sig);
         case FX_CHORUS:       return Chorus_process(ch, sig);
         case FX_FLANGER:      return Flanger_process(flanger, sig);
@@ -160,6 +163,8 @@ int main(void)
     PitchShifter pitch;   PitchShifter_init(&pitch, 7.0f, 0.5f);
     Phaser       phaser;  Phaser_init(&phaser, 0.5f, 0.7f, 0.3f, 0.5f);
     Reverb       reverb;  Reverb_init(&reverb, 0.8f, 8000.0f, 0.3f);
+    distortion_init();
+
 
     ParamMap map[] = {
         { "Overdrive",    "GAIN",        FX_OVERDRIVE,    &od.gain,           1.0f, 0.0f },
@@ -191,6 +196,7 @@ int main(void)
         { "Reverb",       "FEEDBACK",    FX_REVERB,       &reverb.feedback,   1.0f, 0.0f },
         { "Reverb",       "LPFREQ",      FX_REVERB,       &reverb.lpfreq,     1.0f, 0.0f },
         { "Reverb",       "MIX",         FX_REVERB,       &reverb.mix,        1.0f, 0.0f },
+        { "Distortion",   "OUTPUT",      FX_DISTORTION,   NULL              , 0.0f, 0.0f },
     };
     int map_size = sizeof(map) / sizeof(map[0]);
 
@@ -324,6 +330,16 @@ int main(void)
                     if (!colon) continue;
                     float raw_value = 0.0f;
                     if (sscanf(colon + 1, "%f", &raw_value) == 1) {
+                        
+                        // ── Distortion: hardware call instead of float write ──
+                        if (map[m].target == NULL) {
+                            if (strcmp(map[m].param_key, "OUTPUT") == 0) {
+                                distortion_set_volume(raw_value);
+                                printf("    OUTPUT (digipot) = %f\n", raw_value);
+                            }
+                            continue; // skip the *target write below
+                        }
+
                         *map[m].target = raw_value * map[m].scale + map[m].offset;
                         printf("    %s = %f\n", map[m].param_key, *map[m].target);
                     }
@@ -412,5 +428,6 @@ int main(void)
     Pa_CloseStream(pcm);
     Pa_Terminate();
     socket_close();
+    distortion_store();
     return 0;
 }

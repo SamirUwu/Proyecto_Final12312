@@ -1,7 +1,19 @@
 {
   "Preset 1": {
-    "name": "Preset1",
-    "effects": []
+    "name": "Preset 1",
+    "master_gain": 0.17,
+    "effects": [
+      {
+        "id": "fx_1",
+        "type": "Wah",
+        "enabled": true,
+        "params": {
+          "FREQ": 0.5,
+          "Q": 0.8,
+          "LEVEL": 1.0
+        }
+      }
+    ]
   },
   "Preset 2": {
     "name": "Preset2",
@@ -10,5 +22,37 @@
   "Preset 3": {
     "name": "Preset3",
     "effects": []
+  },
+  "uwu": {
+    "name": "uwu",
+    "master_gain": 1.0,
+    "effects": []
+  },
+  "Owo": {
+    "name": "Owo",
+    "master_gain": 1.0,
+    "effects": [
+      {
+        "id": "fx_1",
+        "type": "Overdrive",
+        "enabled": true,
+        "params": {
+          "GAIN": 0.85,
+          "TONE": 0.76,
+          "OUTPUT": 0.71
+        }
+      },
+      {
+        "id": "fx_2",
+        "type": "Flanger",
+        "enabled": true,
+        "params": {
+          "RATE": 1.1440000000000001,
+          "DEPTH": 0.82,
+          "FEEDBACK": 0.84,
+          "MIX": 0.177
+        }
+      }
+    ]
   }
 }
