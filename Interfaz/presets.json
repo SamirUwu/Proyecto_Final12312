@@ -1,16 +1,14 @@
 {
   "Preset 1": {
     "name": "Preset 1",
-    "master_gain": 0.17,
+    "master_gain": 0.1,
     "effects": [
       {
         "id": "fx_1",
-        "type": "Wah",
+        "type": "Distortion",
         "enabled": true,
         "params": {
-          "FREQ": 0.5,
-          "Q": 0.8,
-          "LEVEL": 1.0
+          "OUTPUT": 0.5
         }
       }
     ]

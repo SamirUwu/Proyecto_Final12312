@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <windows.h>
-#include <NIDAQmx.h>        
+#include <NIDAQmx.h>
 #include "../include/distortion.h"
 
 #define POT_MAX_STEPS 99
@@ -9,11 +9,14 @@
 static int        potStep      = 0;
 static int        chipSelected = 0;
 static TaskHandle doTask       = 0;
+static int        hw_ok        = 0;  // 1 solo si la NI está conectada y la tarea OK
 
 // ── Raw line writer ───────────────────────────────────────────────────────────
 // line0 = INC, line1 = U/D, line2 = CS
 static int WriteLines(uInt8 inc, uInt8 ud, uInt8 cs)
 {
+    if (!hw_ok) return 0;  // salida rápida sin spam de errores si no hay hardware
+
     uInt8 data[3] = { inc, ud, cs };
     int32 e = DAQmxWriteDigitalLines(doTask, 1, 1, 10.0,
                                      DAQmx_Val_GroupByChannel,
@@ -22,6 +25,7 @@ static int WriteLines(uInt8 inc, uInt8 ud, uInt8 cs)
         char eb[256];
         DAQmxGetExtendedErrorInfo(eb, sizeof(eb));
         fprintf(stderr, "[DIST ERR] WriteDigital: %d  %s\n", (int)e, eb);
+        hw_ok = 0;  // marcar como roto para no seguir intentando
         return 0;
     }
     return 1;
@@ -32,16 +36,16 @@ static void SelectChip(void)
 {
     WriteLines(1, 1, 0);   /* INC=HIGH, U/D=HIGH, CS=LOW */
     chipSelected = 1;
-    printf("[DIST] Chip selected (CS=LOW)\n");
 }
 
-// ── Move wiper one tap in given direction ─────────────────────────────────────
+// ── Move wiper one tap in given direction (silencioso, sin printf por paso) ───
 // direction: +1 = increment (U/D HIGH), -1 = decrement (U/D LOW)
 // Step happens on the falling edge of INC (negative-edge triggered)
 static void StepWiper(int direction)
 {
+    if (!hw_ok) return;  // no hardware, no op
+
     if (!chipSelected) {
-        printf("[DIST WARN] StepWiper called while chip not selected — selecting first\n");
         SelectChip();
     }
 
@@ -59,17 +63,14 @@ static void StepWiper(int direction)
     potStep += direction;
     if (potStep < 0)             potStep = 0;
     if (potStep > POT_MAX_STEPS) potStep = POT_MAX_STEPS;
-
-    printf("[DIST] Wiper step %+d -> position %d\n", direction, potStep);
 }
 
 // ── Save wiper position to NVM and release CS ─────────────────────────────────
 static void StoreAndDeselect(void)
 {
-    if (!chipSelected) {
-        printf("[DIST WARN] StoreAndDeselect: chip not selected, nothing to store\n");
-        return;
-    }
+    if (!hw_ok) return;  // no hardware, no op
+
+    if (!chipSelected) return;
 
     WriteLines(1, 1, 0);   /* Ensure INC=HIGH before raising CS */
     Sleep(1);
@@ -78,7 +79,7 @@ static void StoreAndDeselect(void)
     Sleep(20);             /* tCP: store time ~10-20 ms */
 
     chipSelected = 0;
-    printf("[DIST] Stored to NVM and deselected. Step=%d\n", potStep);
+    printf("[DIST] Stored to NVM. Step=%d\n", potStep);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -86,23 +87,53 @@ static void StoreAndDeselect(void)
 void distortion_init(void)
 {
     int32 e;
+    hw_ok = 0;  // asumir fallo hasta confirmar
 
     e = DAQmxCreateTask("distDoTask", &doTask);
-    if (e < 0) { fprintf(stderr, "[DIST ERR] CreateTask failed: %d\n", (int)e); return; }
+    if (e < 0) {
+        fprintf(stderr, "[DIST] NI no disponible — digipot deshabilitado\n");
+        return;
+    }
 
     e = DAQmxCreateDOChan(doTask,
                           "Dev1/port0/line0,"   /* INC */
                           "Dev1/port0/line1,"   /* U/D */
                           "Dev1/port0/line2",   /* CS  */
                           "", DAQmx_Val_ChanPerLine);
-    if (e < 0) { fprintf(stderr, "[DIST ERR] CreateDOChan failed: %d\n", (int)e); return; }
+    if (e < 0) {
+        fprintf(stderr, "[DIST] CreateDOChan fallo — digipot deshabilitado\n");
+        DAQmxClearTask(doTask);
+        doTask = 0;
+        return;
+    }
 
     e = DAQmxStartTask(doTask);
-    if (e < 0) { fprintf(stderr, "[DIST ERR] StartTask failed: %d\n", (int)e); return; }
+    if (e < 0) {
+        fprintf(stderr, "[DIST] StartTask fallo — digipot deshabilitado\n");
+        DAQmxClearTask(doTask);
+        doTask = 0;
+        return;
+    }
 
-    /* Idle state: all lines HIGH (chip deselected) */
-    WriteLines(1, 1, 1);
-    printf("[DIST] Init OK — idle (INC=1 U/D=1 CS=1)\n");
+    // ── Escritura de prueba con timeout corto (2s) ────────────────────────────
+    // Si el hardware no está físicamente conectado, falla aquí y no durante
+    // el uso. hw_ok permanece 0 y todo lo demás se ignora silenciosamente.
+    uInt8 probe[3] = { 1, 1, 1 };  // idle state: INC=1 U/D=1 CS=1
+    int32 probe_err = DAQmxWriteDigitalLines(doTask, 1, 1, 2.0,
+                                             DAQmx_Val_GroupByChannel,
+                                             probe, NULL, NULL);
+    if (probe_err < 0) {
+        fprintf(stderr, "[DIST] NI USB-6009 no conectada — digipot deshabilitado\n");
+        DAQmxStopTask(doTask);
+        DAQmxClearTask(doTask);
+        doTask = 0;
+        hw_ok  = 0;
+        return;
+    }
+
+    // Hardware confirmado y funcionando
+    hw_ok = 1;
+    printf("[DIST] Init OK — NI USB-6009 conectada\n");
 
     /* Select chip and move wiper to position 0 */
     SelectChip();
@@ -118,23 +149,32 @@ void distortion_set_volume(float volume)
     if (volume > 1.0f) volume = 1.0f;
 
     int target = (int)(volume * POT_MAX_STEPS);
-    int delta  = target - potStep;
 
+    // ── Sin hardware: actualizar solo el valor lógico, sin pasos físicos ──────
+    if (!hw_ok) {
+        potStep = target;  // mantener estado lógico sincronizado con el slider
+        printf("[DIST] (sin hardware) volume=%.2f -> step logico=%d\n", volume, potStep);
+        return;
+    }
+
+    int delta = target - potStep;
     if (delta == 0) return; /* already there, no steps needed */
 
-    int dir = (delta > 0) ? +1 : -1;
+    int dir   = (delta > 0) ? +1 : -1;
+    int steps = abs(delta);
 
     SelectChip();
-    int steps = abs(delta);
     for (int i = 0; i < steps; i++)
         StepWiper(dir);
 
+    // Un solo printf al finalizar, no uno por paso
     printf("[DIST] Volume set to %.2f -> wiper position %d\n", volume, potStep);
 }
 
 void distortion_store(void)
 {
-    StoreAndDeselect();
+    if (hw_ok)
+        StoreAndDeselect();
 
     if (doTask) {
         DAQmxStopTask(doTask);
