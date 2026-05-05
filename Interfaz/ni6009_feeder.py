@@ -74,6 +74,7 @@ def main():
 
     parser = argparse.ArgumentParser(description="NI USB-6009 → named pipe feeder")
     parser.add_argument("--device",  default="Dev1",  help="NI device name (default: Dev1)")
+    #cualquier canal de AI0 a AI7
     parser.add_argument("--channel", default="ai0",   help="Analog input channel (default: ai0)")
     parser.add_argument("--rate",    type=int, default=44100, help="Sample rate Hz (default: 44100)")
     parser.add_argument("--mode",    choices=["rse", "diff"], default="rse",

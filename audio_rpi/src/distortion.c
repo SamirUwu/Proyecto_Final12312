@@ -94,7 +94,7 @@ void distortion_init(void)
         fprintf(stderr, "[DIST] NI no disponible — digipot deshabilitado\n");
         return;
     }
-
+    // Puertos DAC
     e = DAQmxCreateDOChan(doTask,
                           "Dev1/port0/line0,"   /* INC */
                           "Dev1/port0/line1,"   /* U/D */
