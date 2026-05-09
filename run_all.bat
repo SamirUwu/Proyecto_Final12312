@@ -42,7 +42,7 @@ echo Socket ready.
 
 :: Start GUI con pythonw — sin ventana de cmd, solo la GUI
 echo [3/3] Starting GUI...
-start /B "MultiFX GUI" "%PROJECT_DIR%Interfaz\venv\Scripts\pythonw.exe" "%PROJECT_DIR%Interfaz\main.py"
+start "MultiFX GUI" cmd /k ""%PROJECT_DIR%Interfaz\venv\Scripts\python.exe" "%PROJECT_DIR%Interfaz\main.py""
 echo.
 echo ============================================
 echo Press Q to stop everything
