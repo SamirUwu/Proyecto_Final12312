@@ -5,37 +5,39 @@
 #include <windows.h>
 #include <NIDAQmx.h>
 
-
 #define PACKET_SAMPLES 128
-#define SAMPLE_RATE 44100
-#define ADC_BITS 12
-#define ADC_MAX ((1 << ADC_BITS) - 1)
+#define SAMPLE_RATE    44100
+#define ADC_BITS       12
+#define ADC_MAX        ((1 << ADC_BITS) - 1)
 
 #define PIPE_NAME "\\\\.\\pipe\\ni6009"
 
 typedef struct {
-    uint8_t sync[4];
+    uint8_t  sync[4];
     uint16_t samples[PACKET_SAMPLES];
 } Packet;
 
-uint16_t volts_to_adc(float64 volt, float64 v_min, float64 v_max) {
+uint16_t volts_to_adc(float64 volt, float64 v_min, float64 v_max)
+{
     float64 norm = (volt - v_min) / (v_max - v_min);
     if (norm < 0.0) norm = 0.0;
     if (norm > 1.0) norm = 1.0;
     return (uint16_t)(norm * ADC_MAX);
 }
 
-int main(int argc, char *argv[]) {
+int main(int argc, char *argv[])
+{
     TaskHandle taskHandle = 0;
-    HANDLE pipe_handle;
-    int32 error = 0;
-    char errBuff[2048] = {0};
-    Packet packet;
+    HANDLE     pipe_handle;
+    int32      error = 0;
+    char       errBuff[2048] = {0};
+    Packet     packet;
 
-    // Parse arguments
-    const char *device = "Dev1";
+    // ── Parse arguments ───────────────────────────────────────────────────────
+    const char *device  = "Dev2";
     const char *channel = "ai0";
-    float64 v_min = 0.0, v_max = 5.0;
+    float64     v_min   = 0.0, v_max = 5.0;
+    int         diff_mode = 0;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--device") == 0 && i + 1 < argc)
@@ -44,18 +46,21 @@ int main(int argc, char *argv[]) {
             channel = argv[++i];
         if (strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
             if (strcmp(argv[i + 1], "diff") == 0) {
-                v_min = -10.0;
-                v_max = 10.0;
+                v_min     = -10.0;
+                v_max     =  10.0;
+                diff_mode =  1;
             }
             i++;
         }
     }
 
-    printf("[C feeder] NI USB-6009 | device=%s/%s | rate=%d Hz\n", device, channel, SAMPLE_RATE);
-    printf("           voltage range: %.1f V -- %.1f V\n", v_min, v_max);
-    printf("           packet size: %d samples\n\n", PACKET_SAMPLES);
+    printf("[C feeder] NI USB-6009 | device=%s/%s | rate=%d Hz\n",
+           device, channel, SAMPLE_RATE);
+    printf("           voltage range: %.1f V -- %.1f V  (%s)\n",
+           v_min, v_max, diff_mode ? "DIFF" : "RSE");
+    printf("           packet size:   %d samples\n\n", PACKET_SAMPLES);
 
-    // Create named pipe
+    // ── Create named pipe ─────────────────────────────────────────────────────
     pipe_handle = CreateNamedPipeA(
         PIPE_NAME,
         PIPE_ACCESS_OUTBOUND,
@@ -63,7 +68,8 @@ int main(int argc, char *argv[]) {
         1, 65536, 65536, 0, NULL);
 
     if (pipe_handle == INVALID_HANDLE_VALUE) {
-        printf("[C feeder] ERROR: Could not create pipe\n");
+        printf("[C feeder] ERROR: Could not create pipe (error %lu)\n",
+               GetLastError());
         return 1;
     }
 
@@ -75,33 +81,34 @@ int main(int argc, char *argv[]) {
     }
     printf("[C feeder] Pipe connected -- starting DAQ\n\n");
 
-    // Create DAQmx task
+    // ── Create DAQmx task ─────────────────────────────────────────────────────
     DAQmxCreateTask("", &taskHandle);
 
     char channel_str[256];
     snprintf(channel_str, sizeof(channel_str), "%s/%s", device, channel);
 
-    DAQmxCreateAIVoltageChan(taskHandle, channel_str, "", DAQmx_Val_RSE,
-                              v_min, v_max, DAQmx_Val_Volts, NULL);
+    int32 term_cfg = diff_mode ? DAQmx_Val_Diff : DAQmx_Val_RSE;
+    DAQmxCreateAIVoltageChan(taskHandle, channel_str, "", term_cfg,
+                             v_min, v_max, DAQmx_Val_Volts, NULL);
 
-    // Large hardware buffer to absorb any processing jitter
+    // Buffer grande para absorber jitter del engine
     DAQmxCfgSampClkTiming(taskHandle, "", SAMPLE_RATE, DAQmx_Val_Rising,
-                          DAQmx_Val_ContSamps, PACKET_SAMPLES * 16);
+                          DAQmx_Val_ContSamps, PACKET_SAMPLES * 64);
 
-    // Sequential reading from current position — no jumps, no repeats
-DAQmxSetReadRelativeTo(taskHandle, DAQmx_Val_CurrReadPos);  // was DAQmx_Val_CurrentReadPosition
+    // Lectura secuencial desde la posición actual
+    DAQmxSetReadRelativeTo(taskHandle, DAQmx_Val_CurrReadPos);
     DAQmxSetReadOffset(taskHandle, 0);
 
     DAQmxStartTask(taskHandle);
     printf("[C feeder] DAQ task running\n");
 
-    // Set sync word
+    // ── Sync word ─────────────────────────────────────────────────────────────
     packet.sync[0] = 0xAA;
     packet.sync[1] = 0x55;
     packet.sync[2] = 0xFF;
     packet.sync[3] = 0x00;
 
-    float64 *sample_buffer = (float64*)malloc(PACKET_SAMPLES * sizeof(float64));
+    float64 *sample_buffer = (float64 *)malloc(PACKET_SAMPLES * sizeof(float64));
     if (!sample_buffer) {
         printf("[C feeder] ERROR: Could not allocate buffer\n");
         DAQmxStopTask(taskHandle);
@@ -110,26 +117,41 @@ DAQmxSetReadRelativeTo(taskHandle, DAQmx_Val_CurrReadPos);  // was DAQmx_Val_Cur
         return 1;
     }
 
-    int total_packets = 0;
-    int32 samples_read = 0;
+    int   total_packets  = 0;
+    int   overflow_count = 0;
+    int32 samples_read   = 0;
 
+    // ── Main loop ─────────────────────────────────────────────────────────────
     while (1) {
-        // Block until exactly PACKET_SAMPLES are available sequentially
-        error = DAQmxReadAnalogF64(taskHandle, PACKET_SAMPLES, 0.5,
+        error = DAQmxReadAnalogF64(taskHandle, PACKET_SAMPLES, 1.0,
                                    DAQmx_Val_GroupByChannel, sample_buffer,
                                    PACKET_SAMPLES, &samples_read, NULL);
 
+        // ── Buffer overflow: ignorar y reintentar ─────────────────────────────
+        if (error == -200279 || error == -200284) {
+            overflow_count++;
+            if (overflow_count % 10 == 1)
+                printf("[C feeder] buffer overflow (%d) — continuando\n",
+                       overflow_count);
+            continue;
+        }
+
+        // ── Error fatal ───────────────────────────────────────────────────────
         if (error != 0) {
             DAQmxGetExtendedErrorInfo(errBuff, 2048);
-            printf("[C feeder] DAQmx error: %s\n", errBuff);
+            printf("[C feeder] DAQmx fatal error: %s\n", errBuff);
             break;
         }
 
+        overflow_count = 0;
+
+        // ── Convertir y enviar ────────────────────────────────────────────────
         for (int i = 0; i < PACKET_SAMPLES; i++)
             packet.samples[i] = volts_to_adc(sample_buffer[i], v_min, v_max);
 
         DWORD bytes_written;
-        if (!WriteFile(pipe_handle, &packet, sizeof(packet), &bytes_written, NULL)) {
+        if (!WriteFile(pipe_handle, &packet, sizeof(packet),
+                       &bytes_written, NULL)) {
             printf("[C feeder] Pipe write error -- reader closed\n");
             break;
         }
@@ -139,12 +161,11 @@ DAQmxSetReadRelativeTo(taskHandle, DAQmx_Val_CurrReadPos);  // was DAQmx_Val_Cur
             printf("[C feeder] %d packets sent\n", total_packets);
     }
 
-    // Cleanup
+    // ── Cleanup ───────────────────────────────────────────────────────────────
     free(sample_buffer);
     DAQmxStopTask(taskHandle);
     DAQmxClearTask(taskHandle);
     CloseHandle(pipe_handle);
     printf("[C feeder] done\n");
-
     return 0;
 }

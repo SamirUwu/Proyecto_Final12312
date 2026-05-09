@@ -22,6 +22,7 @@ venv/
 .dart_tool/
 .build/
 build/
+libportaudio.dll
 
 # ===== Opcional específico =====
 audio_rpi/*.exe

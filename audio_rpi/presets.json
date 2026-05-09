@@ -1,0 +1,15 @@
+{
+  "Preset 1": {
+    "name": "Preset 1",
+    "master_gain": 0.1,
+    "effects": []
+  },
+  "Preset 2": {
+    "name": "Preset2",
+    "effects": []
+  },
+  "Preset 3": {
+    "name": "Preset3",
+    "effects": []
+  }
+}

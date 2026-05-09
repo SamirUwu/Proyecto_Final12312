@@ -94,12 +94,11 @@ void distortion_init(void)
         fprintf(stderr, "[DIST] NI no disponible — digipot deshabilitado\n");
         return;
     }
-    // Puertos DAC
+
     e = DAQmxCreateDOChan(doTask,
-                          "Dev1/port0/line0,"   /* INC */
-                          "Dev1/port0/line1,"   /* U/D */
-                          "Dev1/port0/line2",   /* CS  */
-                          "", DAQmx_Val_ChanPerLine);
+                        "Dev2/port0/line0:2",
+                        "", DAQmx_Val_ChanPerLine);
+                        
     if (e < 0) {
         fprintf(stderr, "[DIST] CreateDOChan fallo — digipot deshabilitado\n");
         DAQmxClearTask(doTask);
@@ -143,22 +142,16 @@ void distortion_init(void)
     printf("[DIST] Wiper reset to position 0\n");
 }
 
-void distortion_set_volume(float volume)
+typedef struct { int target; } WiperArgs;
+
+static DWORD WINAPI wiper_thread(LPVOID arg)
 {
-    if (volume < 0.0f) volume = 0.0f;
-    if (volume > 1.0f) volume = 1.0f;
-
-    int target = (int)(volume * POT_MAX_STEPS);
-
-    // ── Sin hardware: actualizar solo el valor lógico, sin pasos físicos ──────
-    if (!hw_ok) {
-        potStep = target;  // mantener estado lógico sincronizado con el slider
-        printf("[DIST] (sin hardware) volume=%.2f -> step logico=%d\n", volume, potStep);
-        return;
-    }
+    WiperArgs *a = (WiperArgs *)arg;
+    int target = a->target;
+    free(a);
 
     int delta = target - potStep;
-    if (delta == 0) return; /* already there, no steps needed */
+    if (delta == 0) return 0;
 
     int dir   = (delta > 0) ? +1 : -1;
     int steps = abs(delta);
@@ -167,8 +160,27 @@ void distortion_set_volume(float volume)
     for (int i = 0; i < steps; i++)
         StepWiper(dir);
 
-    // Un solo printf al finalizar, no uno por paso
-    printf("[DIST] Volume set to %.2f -> wiper position %d\n", volume, potStep);
+    printf("[DIST] Volume -> wiper %d\n", potStep);
+    return 0;
+}
+
+
+void distortion_set_volume(float volume)
+{
+    if (!hw_ok) {
+        potStep = (int)(volume * POT_MAX_STEPS);
+        printf("[DIST] (sin hardware) volume=%.2f -> step logico=%d\n", volume, potStep);
+        return;
+    }
+
+    if (volume < 0.0f) volume = 0.0f;
+    if (volume > 1.0f) volume = 1.0f;
+
+    WiperArgs *args = malloc(sizeof(WiperArgs));
+    args->target = (int)(volume * POT_MAX_STEPS);
+
+    HANDLE t = CreateThread(NULL, 0, wiper_thread, args, 0, NULL);
+    if (t) CloseHandle(t);  // fire and forget
 }
 
 void distortion_store(void)
