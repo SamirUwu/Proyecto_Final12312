@@ -44,8 +44,25 @@ echo Socket ready.
 echo [3/3] Starting GUI...
 start /B "MultiFX GUI" "%PROJECT_DIR%Interfaz\venv\Scripts\pythonw.exe" "%PROJECT_DIR%Interfaz\main.py"
 echo.
-echo All running. Close this window to stop everything.
-pause
+echo ============================================
+echo Press Q to stop everything
+echo ============================================
+
+:wait_key
+choice /c Q /n /m ""
+if errorlevel 1 goto shutdown
+
+:shutdown
+echo.
+echo Stopping processes...
+
+taskkill /F /IM audio_engine.exe 2>NUL
+taskkill /F /IM ni_feeder.exe 2>NUL
+taskkill /F /IM pythonw.exe 2>NUL
+taskkill /F /IM python.exe 2>NUL
+
+timeout /t 1 >NUL
+exit
 
 taskkill /F /IM audio_engine.exe 2>NUL
 taskkill /F /IM ni_feeder.exe 2>NUL
