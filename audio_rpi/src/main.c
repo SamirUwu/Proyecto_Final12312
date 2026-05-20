@@ -22,7 +22,7 @@
 
 #define PI                 3.14159265358979323846f
 #define ALSA_WRITE_BATCHES 1
-#define ALSA_PERIOD_FRAMES (SERIAL_PACKET_SAMPLES * ALSA_WRITE_BATCHES)
+#define ALSA_PERIOD_FRAMES 64
 
 #define SIM_MODE    3
 #define SERIAL_PORT NULL
@@ -43,7 +43,7 @@ static PaStream *alsa_init(unsigned int sample_rate)
 
     PaStream *stream;
     PaError err = Pa_OpenStream(&stream, NULL, &out,
-                                sample_rate, ALSA_PERIOD_FRAMES,
+                                sample_rate, 64,  // CAMBIAR DE ALSA_PERIOD_FRAMES a 64
                                 paClipOff, NULL, NULL);
     if (err != paNoError) {
         fprintf(stderr, "PortAudio error: %s\n", Pa_GetErrorText(err));
@@ -51,7 +51,7 @@ static PaStream *alsa_init(unsigned int sample_rate)
     }
     Pa_StartStream(stream);
     printf("PortAudio ready at %u Hz | period=%d frames\n",
-           sample_rate, ALSA_PERIOD_FRAMES);
+           sample_rate, 64);
     return stream;
 }
 
