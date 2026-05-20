@@ -57,6 +57,49 @@ int socket_receive(char *buffer, int max_len) {
     return n;
 }
 
+/**
+ * socket_receive_timeout - Non-blocking receive with timeout
+ * @buffer: Output buffer for received data
+ * @max_len: Maximum buffer size
+ * @timeout_ms: Timeout in milliseconds (0 = non-blocking, -1 = blocking)
+ * 
+ * Returns:
+ *   > 0 : bytes received
+ *   = 0 : timeout (no data available)
+ *   < 0 : error or connection closed
+ */
+int socket_receive_timeout(char *buffer, int max_len, int timeout_ms) {
+    if (client_fd == INVALID_SOCKET) return -1;
+
+    fd_set readfds;
+    struct timeval tv;
+    
+    // Configure timeout
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+    
+    FD_ZERO(&readfds);
+    FD_SET(client_fd, &readfds);
+    
+    // Wait for socket to be readable with timeout
+    int activity = select(0, &readfds, NULL, NULL, &tv);
+    
+    if (activity < 0) {
+        // Error in select
+        return -1;
+    } else if (activity == 0) {
+        // Timeout - no data available
+        return 0;
+    }
+    
+    // Data is available, receive it
+    int n = recv(client_fd, buffer, max_len - 1, 0);
+    if (n > 0) {
+        buffer[n] = '\0';
+    }
+    return n;
+}
+
 int socket_send_two_floats(float pre, float post) {
     float buf[2] = { pre, post };
     return send(client_fd, (char*)buf, sizeof(buf), 0);

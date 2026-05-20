@@ -236,7 +236,7 @@ class MainWindow(QWidget):
 
         self.timer = QTimer()
         self.timer.timeout.connect(self.sim_signal)
-        self.timer.start(100)
+        self.timer.start(250)
 
         self.server = TcpServer()
         self.server.json_received.connect(self.handle_remote_json)

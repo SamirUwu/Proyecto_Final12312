@@ -24,7 +24,7 @@
 #define ALSA_WRITE_BATCHES 1
 #define ALSA_PERIOD_FRAMES (SERIAL_PACKET_SAMPLES * ALSA_WRITE_BATCHES)
 
-#define SIM_MODE    1
+#define SIM_MODE    3
 #define SERIAL_PORT NULL
 #define SERIAL_BAUD 460800
 
@@ -349,6 +349,8 @@ int main(void)
             for (int k = 0; k < fx_order_count; k++) printf("%d ", fx_order[k]);
             printf("\n");
             memset(json_buffer, 0, sizeof(json_buffer));
+        } else if (n < 0) {
+            printf("[socket] Error receiving\n");
         }
 
         // ── Read batch of samples ─────────────────────────────────────────────

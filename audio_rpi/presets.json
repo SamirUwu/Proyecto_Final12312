@@ -1,8 +1,19 @@
 {
   "Preset 1": {
     "name": "Preset 1",
-    "master_gain": 0.1,
-    "effects": []
+    "master_gain": 1.68,
+    "effects": [
+      {
+        "id": "fx_1",
+        "type": "Delay",
+        "enabled": true,
+        "params": {
+          "TIME": 0.5,
+          "FEEDBACK": 0.3,
+          "MIX": 0.2
+        }
+      }
+    ]
   },
   "Preset 2": {
     "name": "Preset2",

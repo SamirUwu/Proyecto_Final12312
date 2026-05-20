@@ -25,6 +25,31 @@ uint16_t volts_to_adc(float64 volt, float64 v_min, float64 v_max)
     return (uint16_t)(norm * ADC_MAX);
 }
 
+// ── Auto-detectar nombre del dispositivo NI ───────────────────────────────────
+static void detect_ni_device(char *out, size_t out_size)
+{
+    char buf[1024] = {0};
+    int32 e = DAQmxGetSystemInfoAttribute(DAQmx_Sys_DevNames, buf, sizeof(buf));
+    if (e < 0 || buf[0] == '\0') {
+        printf("[C feeder] No se pudo detectar dispositivo NI, usando %s\n", out);
+        return;
+    }
+
+    // Tomar el primer dispositivo (lista separada por comas)
+    char *comma = strchr(buf, ',');
+    if (comma) *comma = '\0';
+
+    // Trim espacios
+    char *start = buf;
+    while (*start == ' ') start++;
+    char *end = start + strlen(start) - 1;
+    while (end > start && *end == ' ') *end-- = '\0';
+
+    strncpy(out, start, out_size - 1);
+    out[out_size - 1] = '\0';
+    printf("[C feeder] Dispositivo NI detectado: %s\n", out);
+}
+
 int main(int argc, char *argv[])
 {
     TaskHandle taskHandle = 0;
@@ -33,8 +58,12 @@ int main(int argc, char *argv[])
     char       errBuff[2048] = {0};
     Packet     packet;
 
-    // ── Parse arguments ───────────────────────────────────────────────────────
-    const char *device  = "Dev2";
+    // ── Auto-detectar dispositivo NI ──────────────────────────────────────────
+    char auto_device[64] = "Dev1";  // fallback
+    detect_ni_device(auto_device, sizeof(auto_device));
+
+    // ── Parse arguments (--device override opcional) ──────────────────────────
+    const char *device  = auto_device;
     const char *channel = "ai0";
     float64     v_min   = 0.0, v_max = 5.0;
     int         diff_mode = 0;
@@ -91,11 +120,9 @@ int main(int argc, char *argv[])
     DAQmxCreateAIVoltageChan(taskHandle, channel_str, "", term_cfg,
                              v_min, v_max, DAQmx_Val_Volts, NULL);
 
-    // Buffer grande para absorber jitter del engine
     DAQmxCfgSampClkTiming(taskHandle, "", SAMPLE_RATE, DAQmx_Val_Rising,
                           DAQmx_Val_ContSamps, PACKET_SAMPLES * 64);
 
-    // Lectura secuencial desde la posición actual
     DAQmxSetReadRelativeTo(taskHandle, DAQmx_Val_CurrReadPos);
     DAQmxSetReadOffset(taskHandle, 0);
 
@@ -127,7 +154,6 @@ int main(int argc, char *argv[])
                                    DAQmx_Val_GroupByChannel, sample_buffer,
                                    PACKET_SAMPLES, &samples_read, NULL);
 
-        // ── Buffer overflow: ignorar y reintentar ─────────────────────────────
         if (error == -200279 || error == -200284) {
             overflow_count++;
             if (overflow_count % 10 == 1)
@@ -136,7 +162,6 @@ int main(int argc, char *argv[])
             continue;
         }
 
-        // ── Error fatal ───────────────────────────────────────────────────────
         if (error != 0) {
             DAQmxGetExtendedErrorInfo(errBuff, 2048);
             printf("[C feeder] DAQmx fatal error: %s\n", errBuff);
@@ -145,7 +170,6 @@ int main(int argc, char *argv[])
 
         overflow_count = 0;
 
-        // ── Convertir y enviar ────────────────────────────────────────────────
         for (int i = 0; i < PACKET_SAMPLES; i++)
             packet.samples[i] = volts_to_adc(sample_buffer[i], v_min, v_max);
 
