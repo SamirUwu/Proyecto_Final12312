@@ -5,12 +5,12 @@
     "effects": [
       {
         "id": "fx_1",
-        "type": "Delay",
+        "type": "Wah",
         "enabled": true,
         "params": {
-          "TIME": 0.5,
-          "FEEDBACK": 0.3,
-          "MIX": 0.2
+          "FREQ": 0.5,
+          "Q": 0.8,
+          "LEVEL": 1.0
         }
       }
     ]

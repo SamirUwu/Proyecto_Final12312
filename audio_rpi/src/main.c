@@ -247,7 +247,7 @@ int main(void)
     while (1) {
 
         // Receive JSON from Python GUI
-        int n = socket_receive(json_buffer, sizeof(json_buffer) - 1);
+        int n = socket_receive_timeout(json_buffer, sizeof(json_buffer) - 1, 0);
         if (n > 0) {
             printf("JSON recibido:\n%s\n", json_buffer);
 
@@ -349,10 +349,12 @@ int main(void)
             for (int k = 0; k < fx_order_count; k++) printf("%d ", fx_order[k]);
             printf("\n");
             memset(json_buffer, 0, sizeof(json_buffer));
-        } else if (n < 0) {
+        } else if (n == 0) {
+            // Timeout - sin datos disponibles (NORMAL, ignorar)
+        } else {
+            // Error real
             printf("[socket] Error receiving\n");
         }
-
         // ── Read batch of samples ─────────────────────────────────────────────
 #if SIM_MODE == 0
         if (serial_read_packet(serial_fd, packet) < 0) {
