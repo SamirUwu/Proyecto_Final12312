@@ -1,16 +1,17 @@
 {
   "Preset 1": {
     "name": "Preset 1",
-    "master_gain": 1.68,
+    "master_gain": 0.53,
     "effects": [
       {
         "id": "fx_1",
-        "type": "Wah",
+        "type": "Chorus",
         "enabled": true,
         "params": {
-          "FREQ": 0.5,
-          "Q": 0.8,
-          "LEVEL": 1.0
+          "RATE": 0.5,
+          "DEPTH": 0.3,
+          "FEEDBACK": 0.0,
+          "MIX": 0.2
         }
       }
     ]

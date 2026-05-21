@@ -22,46 +22,75 @@
 
 #define PI                 3.14159265358979323846f
 #define ALSA_WRITE_BATCHES 1
-#define ALSA_PERIOD_FRAMES 64
+#define ALSA_PERIOD_FRAMES 128  // ← WASAPI friendly size (no longer critical)
 
-#define SIM_MODE    3
+#define SIM_MODE    1
 #define SERIAL_PORT NULL
 #define SERIAL_BAUD 460800
 
-// ── PortAudio (replaces ALSA) ─────────────────────────────────────────────────
+// ── PortAudio with WASAPI (replaces ALSA) ─────────────────────────────────
 
 static PaStream *alsa_init(unsigned int sample_rate)
 {
     Pa_Initialize();
+    
+    // Find WASAPI host API
+    PaHostApiIndex wasapi_index = -1;
+    int num_apis = Pa_GetHostApiCount();
+    for (int i = 0; i < num_apis; i++) {
+        const PaHostApiInfo *info = Pa_GetHostApiInfo(i);
+        if (info->type == paWASAPI) {
+            wasapi_index = i;
+            break;
+        }
+    }
+    
+    if (wasapi_index < 0) {
+        fprintf(stderr, "[ERROR] WASAPI host API not found, falling back to default\n");
+        wasapi_index = Pa_GetDefaultHostApi();
+    }
+    
+    // ── Setup WASAPI-specific parameters ──
+    PaWasapiStreamInfo wasapi_info;
+    memset(&wasapi_info, 0, sizeof(wasapi_info));
+    wasapi_info.size                    = sizeof(PaWasapiStreamInfo);
+    wasapi_info.hostApiType             = paWASAPI;
+    wasapi_info.version                 = 1;
+    wasapi_info.flags                   = paWinWasapiExclusive;  // ← Exclusive mode for lowest latency
+    wasapi_info.threadPriority          = eThreadPriorityProAudio;
+    
+    // ── Output stream parameters ──
     PaStreamParameters out;
     memset(&out, 0, sizeof(out));
-    out.device                    = Pa_GetDefaultOutputDevice();
+    out.device                    = Pa_GetHostApiInfo(wasapi_index)->defaultOutputDevice;
     out.channelCount              = 1;
     out.sampleFormat              = paInt16;
-    out.suggestedLatency          = Pa_GetDeviceInfo(out.device)->defaultLowOutputLatency;
-    out.hostApiSpecificStreamInfo = NULL;
-
+    out.suggestedLatency          = 0.005f;  // 5ms target (WASAPI handles the rest)
+    out.hostApiSpecificStreamInfo = &wasapi_info;
+    
+    // ── Open stream with small buffer ──
     PaStream *stream;
     PaError err = Pa_OpenStream(&stream, NULL, &out,
-                                sample_rate, 64,  // CAMBIAR DE ALSA_PERIOD_FRAMES a 64
+                                sample_rate, 256,  // WASAPI buffer size (gets negotiated)
                                 paClipOff, NULL, NULL);
     if (err != paNoError) {
-        fprintf(stderr, "PortAudio error: %s\n", Pa_GetErrorText(err));
+        fprintf(stderr, "[ERROR] PortAudio/WASAPI error: %s\n", Pa_GetErrorText(err));
         return NULL;
     }
+    
     Pa_StartStream(stream);
-    printf("PortAudio ready at %u Hz | period=%d frames\n",
-           sample_rate, 64);
+    printf("[WASAPI] Ready at %u Hz | exclusive mode | latency ~5-10ms\n", sample_rate);
     return stream;
 }
 
 static void alsa_write_safe(PaStream *stream, const int16_t *buf, int frames)
 {
     PaError err = Pa_WriteStream(stream, buf, frames);
-    if (err == paOutputUnderflowed)
-        fprintf(stderr, "[pa] underflow\n");
-    else if (err != paNoError)
-        fprintf(stderr, "[pa] write error: %s\n", Pa_GetErrorText(err));
+    if (err == paOutputUnderflowed) {
+        fprintf(stderr, "[WASAPI] Buffer underrun (rare in exclusive mode)\n");
+    } else if (err != paNoError) {
+        fprintf(stderr, "[WASAPI] Write error: %s\n", Pa_GetErrorText(err));
+    }
 }
 
 // ── Effect IDs ────────────────────────────────────────────────────────────────
@@ -101,7 +130,7 @@ float process_effect(int fx_id, float sig,
 {
     switch (fx_id) {
         case FX_OVERDRIVE:    return Overdrive_process(od, sig);
-        case FX_DISTORTION: return sig;
+        case FX_DISTORTION:   return sig;
         case FX_WAH:          return Wah_process(wah, sig);
         case FX_CHORUS:       return Chorus_process(ch, sig);
         case FX_FLANGER:      return Flanger_process(flanger, sig);
@@ -149,7 +178,7 @@ found_sync:;
 }
 #endif
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Main ────────────────────────────────────────────────────────────────────
 
 int main(void)
 {
@@ -224,7 +253,7 @@ int main(void)
         fprintf(stderr, "[SIM_MODE 3] ERROR: Could not open pipe. Error code: %lu\n", err);
         fprintf(stderr, "  Check that:\n");
         fprintf(stderr, "  1. NI feeder (Python) is running\n");
-        fprintf(stderr, "  2. The pipe '\\\\.\\\pipe\\ni6009' exists\n");
+        fprintf(stderr, "  2. The pipe '\\\\.\\pipe\\ni6009' exists\n");
         fprintf(stderr, "  3. Python feeder has successfully connected\n");
         return 1;
     }
@@ -406,6 +435,7 @@ int main(void)
                 if (boosted >  1.0f) boosted =  1.0f;
                 if (boosted < -1.0f) boosted = -1.0f;
             }
+            // Safe: alsa_accum has 256 slots, SERIAL_PACKET_SAMPLES is 64
             alsa_accum[alsa_accum_pos++] = (int16_t)(boosted * 32767.0f);
         }
         if (alsa_accum_pos >= ALSA_PERIOD_FRAMES) {
@@ -422,7 +452,7 @@ int main(void)
         socket_send_batch(batch_pre, batch_post, SERIAL_PACKET_SAMPLES);
     }
 
-    // ── Cleanup ───────────────────────────────────────────────────────────────
+    // ── Cleanup ────────────────────────────────────────────────────────────
 #if SIM_MODE == 0
     serial_close(serial_fd);
 #elif SIM_MODE == 3
